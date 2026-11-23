@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>War Cove — Bot Control</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0b0e13; color: #e8ecf1; font-family: Georgia, 'Times New Roman', serif;
+         padding: 14px; max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 22px; letter-spacing: 1px; text-align: center; color: #d8b25c;
+       margin: 6px 0 2px; }
+  .sub { text-align: center; color: #8a93a3; font-size: 13px; margin-bottom: 6px; }
+  #tape { text-align: center; color: #aeb8c6; font-size: 13px; margin-bottom: 14px; min-height: 18px; }
+  .office { border: 1px solid #2a3242; border-radius: 10px; background: #11151d;
+            padding: 12px 14px; margin-bottom: 12px; }
+  .office h2 { font-size: 19px; color: #f0d48a; display: inline-block; }
+  .book { color: #8a93a3; font-size: 13px; margin-left: 8px; }
+  .bal { float: right; color: #aeb8c6; font-size: 14px; }
+  .trades { margin: 10px 0; }
+  .trade { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline;
+           border-top: 1px solid #1d2330; padding: 7px 2px; font-size: 15px; }
+  .side-long { color: #4ade80; font-weight: bold; }
+  .side-short { color: #f87171; font-weight: bold; }
+  .up { color: #4ade80; } .down { color: #f87171; }
+  .none { color: #77808f; font-size: 14px; padding: 6px 2px; }
+  button.closeall { display: block; width: 100%; min-height: 52px; margin-top: 8px;
+    background: #7f1d1d; color: #fff; border: 1px solid #b91c1c; border-radius: 8px;
+    font-size: 17px; font-family: inherit; letter-spacing: .5px; cursor: pointer; }
+  button.closeall:disabled { opacity: .45; }
+  button.closeall:active { background: #991b1b; }
+  .results { margin-top: 8px; font-size: 14px; }
+  .results div { padding: 3px 2px; border-top: 1px dashed #232b3a; }
+  #refresh { display: block; margin: 4px auto 16px; min-height: 44px; padding: 0 26px;
+    background: #1c2331; color: #e8ecf1; border: 1px solid #39445a; border-radius: 8px;
+    font-size: 15px; font-family: inherit; cursor: pointer; }
+  .err { color: #f87171; text-align: center; margin: 10px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+<h1>WAR COVE — BOT CONTROL</h1>
+<div class="sub">Every bot in its office. One button closes all of that bot's trades.</div>
+<div id="tape">Loading the tape…</div>
+<button id="refresh">↻ REFRESH</button>
+<div id="offices"></div>
+<div class="err" id="err"></div>
+
+<script>
+const TOKEN = "630ef4b846abd61c1034f87107d8114a32b982a7ceef2182";
+let endpoint = null;
+
+function fmtSats(n) { if (n === null || n === undefined) return "—"; return (n >= 0 ? "+" : "") + Number(n).toLocaleString("en-US") + " sats"; }
+function fmtPct(n) { if (n === null || n === undefined) return ""; return " · " + (n >= 0 ? "+" : "") + n + "%"; }
+function fmtPrice(v) { if (v === null || v === undefined) return "—"; return "$" + Number(v).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+async function discover() {
+  const r = await fetch("control-endpoint.json?cb=" + Date.now());
+  const j = await r.json();
+  endpoint = j.endpoint;
+}
+
+async function lane(path, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({}, opts.headers || {}, {"X-Lane-Token": TOKEN});
+  const r = await fetch(endpoint + path, opts);
+  return r.json();
+}
+
+function tradeRow(t) {
+  const sideCls = t.side === "long" ? "side-long" : "side-short";
+  const pnlCls = (t.upnl !== null && t.upnl < 0) ? "down" : "up";
+  const pnl = t.upnl === null ? "tape stalled" : '<span class="' + pnlCls + '">' + fmtSats(t.upnl) + fmtPct(t.pct) + "</span>";
+  return '<div class="trade"><span class="' + sideCls + '">' + esc((t.side || "").toUpperCase()) + " " + esc(t.coin) + "</span>" +
+    "<span>" + t.lev + "x</span><span>entry " + fmtPrice(t.entry) + "</span><span>live " + fmtPrice(t.price) + "</span>" +
+    "<span>" + pnl + "</span></div>";
+}
+
+function officeEl(o) {
+  const div = document.createElement("div");
+  div.className = "office";
+  div.id = "office-" + o.id;
+  let bal = "";
+  if (o.balance !== null && o.balance !== undefined) {
+    bal = '<span class="bal">' + Number(o.balance).toLocaleString("en-US") + " sats · " +
+          (o.wins || 0) + "W / " + (o.losses || 0) + "L</span>";
+  }
+  let trades;
+  if (o.positions && o.positions.length) {
+    trades = o.positions.map(tradeRow).join("");
+  } else {
+    trades = '<div class="none">No open trades.</div>';
+  }
+  div.innerHTML = "<h2>" + esc(o.name) + "</h2>" + bal +
+    '<div class="trades">' + trades + "</div>" +
+    '<button class="closeall" data-book="' + o.id + '">CLOSE ALL TRADES — ' + esc(o.name.toUpperCase()) + "</button>" +
+    '<div class="results" id="results-' + o.id + '"></div>';
+  const btn = div.querySelector("button.closeall");
+  btn.addEventListener("click", () => closeAll(o.id, btn));
+  return div;
+}
+
+async function load() {
+  const err = document.getElementById("err");
+  err.textContent = "";
+  try {
+    if (!endpoint) await discover();
+    const s = await lane("/state");
+    if (!s.ok) throw new Error(s.error || "lane refused");
+    const tape = document.getElementById("tape");
+    const p = s.prices || {};
+    tape.textContent = ["LTC", "BTC", "ETH", "SOL", "BCH", "BNB"]
+      .map(c => c + " " + fmtPrice(p[c])).join(" · ");
+    const wrap = document.getElementById("offices");
+    wrap.innerHTML = "";
+    // House law: offices load ONE AT A TIME, in order.
+    for (const o of s.offices) {
+      wrap.appendChild(officeEl(o));
+      await new Promise(r => setTimeout(r, 40));
+    }
+  } catch (e) {
+    err.textContent = "The control lane didn't answer — tap REFRESH. (" + e.message + ")";
+  }
+}
+
+async function closeAll(book, btn) {
+  const box = document.getElementById("results-" + book);
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = "CLOSING…";
+  box.innerHTML = "";
+  try {
+    const r = await lane("/close-all", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({book: book})
+    });
+    if (r.note && (!r.results || !r.results.length)) {
+      box.innerHTML = "<div>" + esc(r.note) + "</div>";
+    }
+    (r.results || []).forEach(t => {
+      const d = document.createElement("div");
+      if (t.status === "closed") {
+        d.innerHTML = "✅ " + esc((t.side || "").toUpperCase()) + " " + esc(t.coin) +
+          " closed @ " + fmtPrice(t.close_price) + " → <b>" + fmtSats(t.pnl) + "</b>";
+      } else {
+        d.textContent = "⚠️ " + (t.side || "").toUpperCase() + " " + t.coin + " — " +
+          (t.reply || ("the game answered: " + t.status));
+      }
+      box.appendChild(d);
+    });
+  } catch (e) {
+    box.innerHTML = "<div>The close didn't reach the lane — trades untouched. (" + e.message + ")</div>";
+  }
+  btn.disabled = false;
+  btn.textContent = old;
+  load();
+}
+
+document.getElementById("refresh").addEventListener("click", load);
+load();
+setInterval(load, 20000);
+</script>
+</body>
+</html>
