@@ -25,11 +25,16 @@
   .side-short { color: #f87171; font-weight: bold; }
   .up { color: #4ade80; } .down { color: #f87171; }
   .none { color: #77808f; font-size: 14px; padding: 6px 2px; }
-  button.closeall { display: block; width: 100%; min-height: 52px; margin-top: 8px;
-    background: #7f1d1d; color: #fff; border: 1px solid #b91c1c; border-radius: 8px;
-    font-size: 17px; font-family: inherit; letter-spacing: .5px; cursor: pointer; }
-  button.closeall:disabled { opacity: .45; }
+  .btnrow { display: flex; gap: 8px; margin-top: 8px; }
+  .btnrow button { flex: 1 1 0; min-height: 52px; color: #fff; border-radius: 8px;
+    font-size: 16px; font-family: inherit; letter-spacing: .5px; cursor: pointer; }
+  button.clickclose { background: #92400e; border: 1px solid #d97706; }
+  button.clickclose:active { background: #b45309; }
+  button.closeall { background: #7f1d1d; border: 1px solid #b91c1c; }
   button.closeall:active { background: #991b1b; }
+  .btnrow button:disabled { opacity: .45; }
+  .trade { cursor: pointer; }
+  .trade.sel { background: #26331c; outline: 1px solid #84cc16; border-radius: 6px; }
   .results { margin-top: 8px; font-size: 14px; }
   .results div { padding: 3px 2px; border-top: 1px dashed #232b3a; }
   #refresh { display: block; margin: 4px auto 16px; min-height: 44px; padding: 0 26px;
@@ -38,11 +43,16 @@
   .err { color: #f87171; text-align: center; margin: 10px 0; font-size: 14px; }
   .floor-head { font-size: 16px; font-weight: bold; letter-spacing: 2px; color: #8fd8ff;
     border-bottom: 2px solid #2a3242; padding: 8px 2px 6px; margin: 18px 0 12px; }
+  .kindtag { display: inline-block; vertical-align: middle; margin-left: 10px;
+    font-size: 12px; font-weight: bold; letter-spacing: 2px; padding: 3px 9px;
+    border-radius: 999px; border: 1px solid; }
+  .kt-crypto { color: #f0d48a; border-color: #d8b25c; background: #2a2110; }
+  .kt-stock { color: #8fd8ff; border-color: #3d7ea6; background: #0f2233; }
 </style>
 </head>
 <body>
 <h1>WARCOVE BOT CONTROL BOARD</h1>
-<div class="sub">Every bot in its office. One button closes all of that bot's trades. Crypto offices first, then the stock offices.</div>
+<div class="sub">Every bot in its office, every open trade showing live. Tap a trade to pick it — the left half of the bar closes just that one, the right half closes them all. Crypto offices first, then the stock offices.</div>
 <div id="tape">Loading the tape…</div>
 <button id="refresh">↻ REFRESH</button>
 <div id="offices"></div>
@@ -51,6 +61,7 @@
 <script>
 const TOKEN = "630ef4b846abd61c1034f87107d8114a32b982a7ceef2182";
 let endpoint = null;
+const SELECTED = {};
 
 function fmtSats(n) { if (n === null || n === undefined) return "—"; return (n >= 0 ? "+" : "") + Number(n).toLocaleString("en-US") + " sats"; }
 function fmtPct(n) { if (n === null || n === undefined) return ""; return " · " + (n >= 0 ? "+" : "") + n + "%"; }
@@ -74,12 +85,12 @@ function tradeRow(t) {
   const sideCls = t.side === "long" ? "side-long" : "side-short";
   const pnlCls = (t.upnl !== null && t.upnl < 0) ? "down" : "up";
   const pnl = t.upnl === null ? "tape stalled" : '<span class="' + pnlCls + '">' + fmtSats(t.upnl) + fmtPct(t.pct) + "</span>";
-  return '<div class="trade"><span class="' + sideCls + '">' + esc((t.side || "").toUpperCase()) + " " + esc(t.coin) + "</span>" +
+  return '<div class="trade" data-coin="' + esc(t.coin) + '" data-side="' + esc(t.side || "") + '"><span class="' + sideCls + '">' + esc((t.side || "").toUpperCase()) + " " + esc(t.coin) + "</span>" +
     "<span>" + t.lev + "x</span><span>entry " + fmtPrice(t.entry) + "</span><span>live " + fmtPrice(t.price) + "</span>" +
     "<span>" + pnl + "</span></div>";
 }
 
-function officeEl(o) {
+function officeEl(o, kind) {
   const div = document.createElement("div");
   div.className = "office";
   div.id = "office-" + o.id;
@@ -94,10 +105,25 @@ function officeEl(o) {
   } else {
     trades = '<div class="none">No open trades.</div>';
   }
-  div.innerHTML = "<h2>" + esc(o.name) + "</h2>" + bal +
+  const tag = kind === "stock"
+    ? '<span class="kindtag kt-stock">📈 STOCK</span>'
+    : '<span class="kindtag kt-crypto">₿ CRYPTO</span>';
+  div.innerHTML = "<h2>" + esc(o.name) + "</h2>" + tag + bal +
     '<div class="trades">' + trades + "</div>" +
-    '<button class="closeall" data-book="' + o.id + '">CLOSE ALL TRADES — ' + esc(o.name.toUpperCase()) + "</button>" +
+    '<div class="btnrow">' +
+    '<button class="clickclose" data-book="' + o.id + '">CLICK TO CLOSE</button>' +
+    '<button class="closeall" data-book="' + o.id + '">CLOSE ALL — ' + esc(o.name.toUpperCase()) + "</button>" +
+    "</div>" +
     '<div class="results" id="results-' + o.id + '"></div>';
+  div.querySelectorAll(".trade").forEach(row => {
+    row.addEventListener("click", () => {
+      div.querySelectorAll(".trade").forEach(r => r.classList.remove("sel"));
+      row.classList.add("sel");
+      SELECTED[o.id] = {coin: row.getAttribute("data-coin"), side: row.getAttribute("data-side")};
+    });
+  });
+  const btnOne = div.querySelector("button.clickclose");
+  btnOne.addEventListener("click", () => closeOne(o.id, btnOne));
   const btn = div.querySelector("button.closeall");
   btn.addEventListener("click", () => closeAll(o.id, btn));
   return div;
@@ -129,12 +155,56 @@ async function load() {
         wrap.appendChild(h);
         await new Promise(r => setTimeout(r, 40));
       }
-      wrap.appendChild(officeEl(o));
+      wrap.appendChild(officeEl(o, kind));
       await new Promise(r => setTimeout(r, 40));
     }
   } catch (e) {
     err.textContent = "The control lane didn't answer — tap REFRESH. (" + e.message + ")";
   }
+}
+
+function renderResults(box, r) {
+  if (r.note && (!r.results || !r.results.length)) {
+    box.innerHTML = "<div>" + esc(r.note) + "</div>";
+  }
+  (r.results || []).forEach(t => {
+    const d = document.createElement("div");
+    if (t.status === "closed") {
+      d.innerHTML = "✅ " + esc((t.side || "").toUpperCase()) + " " + esc(t.coin) +
+        " closed @ " + fmtPrice(t.close_price) + " → <b>" + fmtSats(t.pnl) + "</b>";
+    } else {
+      d.textContent = "⚠️ " + (t.side || "").toUpperCase() + " " + t.coin + " — " +
+        (t.reply || ("the game answered: " + t.status));
+    }
+    box.appendChild(d);
+  });
+}
+
+async function closeOne(book, btn) {
+  const box = document.getElementById("results-" + book);
+  const sel = SELECTED[book];
+  if (!sel) {
+    box.innerHTML = "<div>Tap one of the trades above first — it lights up green — then hit CLICK TO CLOSE.</div>";
+    return;
+  }
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = "CLOSING…";
+  box.innerHTML = "";
+  try {
+    const r = await lane("/close-one", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({book: book, coin: sel.coin, side: sel.side})
+    });
+    renderResults(box, r);
+  } catch (e) {
+    box.innerHTML = "<div>The close didn't reach the lane — trade untouched. (" + e.message + ")</div>";
+  }
+  btn.disabled = false;
+  btn.textContent = old;
+  delete SELECTED[book];
+  load();
 }
 
 async function closeAll(book, btn) {
