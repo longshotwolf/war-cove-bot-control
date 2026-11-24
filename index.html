@@ -159,6 +159,7 @@ async function load() {
       await new Promise(r => setTimeout(r, 40));
     }
   } catch (e) {
+    endpoint = null; // the lane's door moves — re-discover it next load
     err.textContent = "The control lane didn't answer — tap REFRESH. (" + e.message + ")";
   }
 }
