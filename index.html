@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>War Cove — Bot Control</title>
+<title>WarCove Bot Command</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -36,11 +36,13 @@
     background: #1c2331; color: #e8ecf1; border: 1px solid #39445a; border-radius: 8px;
     font-size: 15px; font-family: inherit; cursor: pointer; }
   .err { color: #f87171; text-align: center; margin: 10px 0; font-size: 14px; }
+  .floor-head { font-size: 16px; font-weight: bold; letter-spacing: 2px; color: #8fd8ff;
+    border-bottom: 2px solid #2a3242; padding: 8px 2px 6px; margin: 18px 0 12px; }
 </style>
 </head>
 <body>
-<h1>WAR COVE — BOT CONTROL</h1>
-<div class="sub">Every bot in its office. One button closes all of that bot's trades.</div>
+<h1>WARCOVE BOT COMMAND</h1>
+<div class="sub">Every bot in its office. One button closes all of that bot's trades. Crypto offices first, then the stock offices.</div>
 <div id="tape">Loading the tape…</div>
 <button id="refresh">↻ REFRESH</button>
 <div id="offices"></div>
@@ -114,8 +116,19 @@ async function load() {
       .map(c => c + " " + fmtPrice(p[c])).join(" · ");
     const wrap = document.getElementById("offices");
     wrap.innerHTML = "";
+    const STOCK = {nova:1, gia:1, mira:1, tess:1, mia:1, pia:1, cora:1, ava:1};
+    let section = "";
     // House law: offices load ONE AT A TIME, in order.
     for (const o of s.offices) {
+      const kind = STOCK[o.id] ? "stock" : "crypto";
+      if (kind !== section) {
+        section = kind;
+        const h = document.createElement("div");
+        h.className = "floor-head";
+        h.textContent = kind === "crypto" ? "₿ CRYPTO OFFICES" : "📈 STOCK OFFICES";
+        wrap.appendChild(h);
+        await new Promise(r => setTimeout(r, 40));
+      }
       wrap.appendChild(officeEl(o));
       await new Promise(r => setTimeout(r, 40));
     }
